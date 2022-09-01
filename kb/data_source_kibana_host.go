@@ -5,8 +5,8 @@
 package kb
 
 import (
-	kibana "github.com/disaster37/go-kibana-rest/v7"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	kibana "github.com/kaminskip88/go-kibana-rest/v8"
 )
 
 func dataSourceKibanaHost() *schema.Resource {

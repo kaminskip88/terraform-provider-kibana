@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	kibana "github.com/disaster37/go-kibana-rest/v7"
-	"github.com/disaster37/go-kibana-rest/v7/kbapi"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	kibana "github.com/kaminskip88/go-kibana-rest/v8"
+	"github.com/kaminskip88/go-kibana-rest/v8/kbapi"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )

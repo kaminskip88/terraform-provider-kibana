@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	kibana "github.com/disaster37/go-kibana-rest/v7"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	kibana "github.com/kaminskip88/go-kibana-rest/v8"
 	"github.com/pkg/errors"
 )
 

@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/coreos/go-semver/semver"
-	kibana "github.com/disaster37/go-kibana-rest/v7"
-	"github.com/disaster37/go-kibana-rest/v7/kbapi"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	kibana "github.com/kaminskip88/go-kibana-rest/v8"
+	"github.com/kaminskip88/go-kibana-rest/v8/kbapi"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -68,6 +68,7 @@ func Provider() *schema.Provider {
 			"kibana_object":            resourceKibanaObject(),
 			"kibana_logstash_pipeline": resourceKibanaLogstashPipeline(),
 			"kibana_copy_object":       resourceKibanaCopyObject(),
+			"kibana_dataview":          resourceKibanaDataView(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{

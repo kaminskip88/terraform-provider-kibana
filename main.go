@@ -5,8 +5,8 @@ import (
 	"flag"
 	"os"
 
-	"github.com/disaster37/terraform-provider-kibana/v8/kb"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
+	"github.com/kaminskip88/terraform-provider-kibana/v8/kb"
 	log "github.com/sirupsen/logrus"
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 )

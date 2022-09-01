@@ -8,9 +8,9 @@ package kb
 import (
 	"fmt"
 
-	kibana "github.com/disaster37/go-kibana-rest/v7"
-	kbapi "github.com/disaster37/go-kibana-rest/v7/kbapi"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	kibana "github.com/kaminskip88/go-kibana-rest/v8"
+	kbapi "github.com/kaminskip88/go-kibana-rest/v8/kbapi"
 	log "github.com/sirupsen/logrus"
 )
 

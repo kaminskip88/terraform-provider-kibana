@@ -6,10 +6,12 @@
 package kb
 
 import (
+	"encoding/json"
 	"fmt"
 
-	kibana "github.com/disaster37/go-kibana-rest/v7"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	kibana "github.com/kaminskip88/go-kibana-rest/v8"
+	"github.com/kaminskip88/go-kibana-rest/v8/kbapi"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -25,32 +27,31 @@ func resourceKibanaObject() *schema.Resource {
 			"name": {
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: true,
+				// ForceNew: true,
 			},
 			"space": {
 				Type:     schema.TypeString,
 				Optional: true,
+				// ForceNew: true,
+				Default: "default",
+			},
+			"type": {
+				Type:     schema.TypeString,
+				Required: true,
 				ForceNew: true,
-				Default:  "default",
+				// DiffSuppressFunc: suppressEquivalentNDJSON,
 			},
-			"data": {
-				Type:             schema.TypeString,
-				Required:         true,
-				DiffSuppressFunc: suppressEquivalentNDJSON,
+			"attributes": {
+				Type:     schema.TypeString,
+				Required: true,
+				// DiffSuppressFunc: suppressEquivalentNDJSON,
 			},
-			"export_types": {
-				Type:     schema.TypeSet,
-				Optional: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-			},
-			"export_objects": {
+			"reference": {
 				Type:     schema.TypeSet,
 				Optional: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"id": {
+						"name": {
 							Type:     schema.TypeString,
 							Required: true,
 						},
@@ -58,141 +59,200 @@ func resourceKibanaObject() *schema.Resource {
 							Type:     schema.TypeString,
 							Required: true,
 						},
+						"id": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
 					},
 				},
 			},
-			"deep_reference": {
+			"overwrite": {
 				Type:     schema.TypeBool,
 				Optional: true,
-				Default:  true,
+				Default:  false,
 			},
 		},
 	}
 }
 
-// Import objects in Kibana
 func resourceKibanaObjectCreate(d *schema.ResourceData, meta interface{}) error {
-	name := d.Get("name").(string)
+	title := d.Get("name").(string)
+	objType := d.Get("type").(string)
+	dataJSON := d.Get("attributes").(string)
+	overwrite := d.Get("overwrite").(bool)
+	references := d.Get("reference").(*schema.Set).List()
 
-	err := importObject(d, meta)
+	client := meta.(*kibana.Client)
+
+	data, err := unmarshalAttrs([]byte(dataJSON))
 	if err != nil {
 		return err
 	}
 
-	d.SetId(name)
+	// add title to attributes
+	data["title"] = title
 
-	log.Infof("Imported objects %s successfully", name)
-	fmt.Printf("[INFO] Imported objects %s successfully", name)
+	refs, err := buildReferences(references)
+	if err != nil {
+		return err
+	}
+	so := &kbapi.KibanaSavedObject{
+		Type:       objType,
+		Attributes: data,
+		References: refs,
+	}
+
+	so, err = client.API.KibanaSavedObjectV2.Create(so, overwrite)
+	if err != nil {
+		return err
+	}
+
+	d.SetId(so.ID)
+
+	log.Debugf("Saved object created. id: %s", so.ID)
 
 	return resourceKibanaObjectRead(d, meta)
 }
 
-// Export objects in Kibana
 func resourceKibanaObjectRead(d *schema.ResourceData, meta interface{}) error {
 
 	id := d.Id()
-	exportTypes := convertArrayInterfaceToArrayString(d.Get("export_types").(*schema.Set).List())
-	exportObjects := buildExportObjects(d.Get("export_objects").(*schema.Set).List())
-	deepReference := d.Get("deep_reference").(bool)
-	space := d.Get("space").(string)
-
-	log.Debugf("Object id:  %s", id)
-	log.Debugf("Export types: %+v", exportTypes)
-	log.Debugf("Export Objects: %+v", exportObjects)
-	log.Debugf("Space: %s", space)
+	objType := d.Get("type").(string)
 
 	client := meta.(*kibana.Client)
 
-	data, err := client.API.KibanaSavedObject.Export(exportTypes, exportObjects, deepReference, space)
+	so, err := client.API.KibanaSavedObjectV2.Get(id, objType)
 	if err != nil {
 		return err
 	}
 
-	if len(data) == 0 {
-		log.Warnf("Export object %s not found - removing from state", id)
-		fmt.Printf("[WARN] Export object %s not found - removing from state", id)
+	if so == nil {
+		log.Debugf("Sved object %s not found - removing from state", id)
 		d.SetId("")
 		return nil
 	}
 
-	log.Debugf("Export object %s successfully:\n%+v", id, string(data))
-
-	d.Set("name", id)
-	d.Set("data", string(data))
-	d.Set("space", space)
-	d.Set("export_types", exportTypes)
-	d.Set("export_objects", exportObjects)
-
-	log.Infof("Export object %s successfully", id)
-	fmt.Printf("[INFO] Export object %s successfully", id)
-
-	return nil
-}
-
-// Update existing object in Kibana
-func resourceKibanaObjectUpdate(d *schema.ResourceData, meta interface{}) error {
-	id := d.Id()
-
-	err := importObject(d, meta)
+	jsonAttr, err := marshalAttrs(so.Attributes)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Updated object %s successfully", id)
-	fmt.Printf("[INFO] Updated object %s successfully", id)
+	log.Debugf("Saved object %s found", id)
+
+	d.Set("name", so.Attributes["title"])
+	d.Set("type", so.Type)
+	// d.Set("space", so.Space)
+	d.Set("attributes", jsonAttr)
+
+	return nil
+}
+
+func resourceKibanaObjectUpdate(d *schema.ResourceData, meta interface{}) error {
+	id := d.Id()
+	title := d.Get("name").(string)
+	objType := d.Get("type").(string)
+	dataJSON := d.Get("attributes").(string)
+	references := d.Get("reference").(*schema.Set).List()
+
+	client := meta.(*kibana.Client)
+
+	data, err := unmarshalAttrs([]byte(dataJSON))
+	if err != nil {
+		return err
+	}
+
+	// add title to attributes
+	data["title"] = title
+
+	refs, err := buildReferences(references)
+	if err != nil {
+		return err
+	}
+
+	so := &kbapi.KibanaSavedObject{
+		ID:         id,
+		Type:       objType,
+		Attributes: data,
+		References: refs,
+	}
+
+	so, err = client.API.KibanaSavedObjectV2.Update(so)
+	if err != nil {
+		return err
+	}
+
+	d.SetId(so.ID)
+
+	log.Debugf("Saved object %s updated", id)
 
 	return resourceKibanaObjectRead(d, meta)
 }
 
-// Delete object in Kibana is not supported
-// It just remove object from state
 func resourceKibanaObjectDelete(d *schema.ResourceData, meta interface{}) error {
-
-	d.SetId("")
-
-	log.Infof("Delete object in not supported - just removing from state")
-	fmt.Printf("[INFO] Delete object in not supported - just removing from state")
-	return nil
-
-}
-
-// Build list of object to export
-func buildExportObjects(raws []interface{}) []map[string]string {
-
-	results := make([]map[string]string, len(raws))
-
-	for i, raw := range raws {
-		m := raw.(map[string]interface{})
-		object := map[string]string{}
-		object["type"] = m["type"].(string)
-		object["id"] = m["id"].(string)
-		results[i] = object
-	}
-
-	return results
-
-}
-
-// Import objects in Kibana
-func importObject(d *schema.ResourceData, meta interface{}) error {
-	data := d.Get("data").(string)
-	space := d.Get("space").(string)
-
-	log.Debugf("Data to import: %s", data)
-
-	var (
-		importedData map[string]interface{}
-		err          error
-	)
+	id := d.Id()
+	objType := d.Get("type").(string)
 
 	client := meta.(*kibana.Client)
 
-	importedData, err = client.API.KibanaSavedObject.Import([]byte(data), true, space)
+	err := client.API.KibanaSavedObjectV2.Delete(id, objType)
 	if err != nil {
 		return err
 	}
 
-	log.Debugf("Imported object: %+v", importedData)
+	d.SetId("")
 
 	return nil
+
+}
+
+func marshalAttrs(attrs map[string]interface{}) ([]byte, error) {
+	json, err := json.Marshal(attrs)
+	if err != nil {
+		return nil, err
+	}
+	return json, nil
+}
+
+func unmarshalAttrs(str []byte) (map[string]interface{}, error) {
+	data := make(map[string]interface{})
+	err := json.Unmarshal([]byte(str), &data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func buildReferences(raws []interface{}) ([]kbapi.Reference, error) {
+	// if len(raws) == 0 {
+	// 	return make([]*kbapi.Reference, 0), nil
+	// }
+
+	var result []kbapi.Reference
+
+	for _, i := range raws {
+		raw := i.(map[string]interface{})
+
+		var ref kbapi.Reference
+
+		n, ok := raw["name"]
+		if !ok {
+			return nil, fmt.Errorf("reference \"name\" required")
+		}
+		ref.Name = n.(string)
+
+		n, ok = raw["type"]
+		if !ok {
+			return nil, fmt.Errorf("reference \"type\" required")
+		}
+		ref.Type = n.(string)
+
+		n, ok = raw["id"]
+		if !ok {
+			return nil, fmt.Errorf("reference \"id\" required")
+		}
+		ref.ID = n.(string)
+
+		result = append(result, ref)
+	}
+	return result, nil
 }
