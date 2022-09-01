@@ -43,7 +43,8 @@ func resourceKibanaObject() *schema.Resource {
 			},
 			"attributes": {
 				Type:     schema.TypeString,
-				Required: true,
+				Optional: true,
+				Default:  "{}",
 				// DiffSuppressFunc: suppressEquivalentNDJSON,
 			},
 			"reference": {
@@ -132,17 +133,17 @@ func resourceKibanaObjectRead(d *schema.ResourceData, meta interface{}) error {
 		return nil
 	}
 
-	jsonAttr, err := marshalAttrs(so.Attributes)
-	if err != nil {
-		return err
-	}
-
 	log.Debugf("Saved object %s found", id)
 
 	d.Set("name", so.Attributes["title"])
 	d.Set("type", so.Type)
 	// d.Set("space", so.Space)
-	d.Set("attributes", jsonAttr)
+
+	jsonAttr, err := marshalAttrs(filterAttrs(so.Attributes))
+	if err != nil {
+		return err
+	}
+	d.Set("attributes", string(jsonAttr))
 
 	return nil
 }
@@ -255,4 +256,9 @@ func buildReferences(raws []interface{}) ([]kbapi.Reference, error) {
 		result = append(result, ref)
 	}
 	return result, nil
+}
+
+func filterAttrs(m map[string]interface{}) map[string]interface{} {
+	delete(m, "title")
+	return m
 }

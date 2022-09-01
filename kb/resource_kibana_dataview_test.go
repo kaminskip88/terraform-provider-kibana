@@ -10,57 +10,55 @@ import (
 	"github.com/pkg/errors"
 )
 
-func TestAccKibanaObject(t *testing.T) {
+func TestAccKibanaDataview(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
 		},
 		Providers:    testAccProviders,
-		CheckDestroy: testCheckKibanaObjectDestroy,
+		CheckDestroy: testCheckKibanaDataviewDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testKibanaObject,
+				Config: testKibanaDataview,
 				Check: resource.ComposeTestCheckFunc(
-					testCheckKibanaObjectExists("kibana_object.test"),
+					testCheckKibanaDataviewExists("kibana_dataview.test"),
 				),
-				// ExpectNonEmptyPlan: true,
 			},
 		},
 	})
 }
 
-func testCheckKibanaObjectExists(name string) resource.TestCheckFunc {
+func testCheckKibanaDataviewExists(name string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 		if !ok {
 			return fmt.Errorf("Not found: %s", name)
 		}
 		if rs.Primary.ID == "" {
-			return fmt.Errorf("No object ID is set")
+			return fmt.Errorf("No dataview ID is set")
 		}
 
 		// space := "default"
-		objType := "search"
 
 		meta := testAccProvider.Meta()
 
 		client := meta.(*kibana.Client)
-		data, err := client.API.KibanaSavedObjectV2.Get(rs.Primary.ID, objType)
+		data, err := client.API.KibanaDataView.Get(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
 		if data == nil {
-			return errors.Errorf("Object %s not found", rs.Primary.ID)
+			return errors.Errorf("Dataview %s not found", rs.Primary.ID)
 		}
 
 		return nil
 	}
 }
 
-func testCheckKibanaObjectDestroy(s *terraform.State) error {
+func testCheckKibanaDataviewDestroy(s *terraform.State) error {
 	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "kibana_object" {
+		if rs.Type != "kibana_dataview" {
 			continue
 		}
 
@@ -69,13 +67,9 @@ func testCheckKibanaObjectDestroy(s *terraform.State) error {
 	return nil
 }
 
-var testKibanaObject = `
-resource "kibana_object" "test" {
-	name 	    = "test-search"
-	type        = "search"
-	attributes	= jsonencode({
-		sort = [["@timestamp","desc"]]
-		columns = ["message", "_id"]
-	})
+var testKibanaDataview = `
+resource "kibana_dataview" "test" {
+	name = "test-logs-*"
+	time_field = "@timestamp"
 }
 `

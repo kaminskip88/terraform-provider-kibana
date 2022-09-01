@@ -1,18 +1,9 @@
-name: "build"
+name: "release"
 
 on:
   push:
-    branches:
-      - main
-      - 7.x
-      - 8.x
     tags:
-      - "*"
-  pull_request:
-    branches:
-      - main
-      - 7.x
-      - 8.x
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
   build:
@@ -24,25 +15,11 @@ jobs:
         with:
           go-version: "1.17"
       - name: Setup Elasticsearch / Kibana
-        run: |
-          set -e
-          docker-compose up elasticsearch &
-          echo "Waiting for Elasticsearch availability"
-          until curl -s http://localhost:9200 | grep -q 'missing authentication credentials'; do sleep 30; done;
-          echo "Setting kibana_system password"
-          until curl -s -X POST -u elastic:changeme -H "Content-Type: application/json" http://localhost:9200/_security/user/kibana_system/_password -d "{\"password\":\"changeme\"}" | grep -q "^{}"; do sleep 10; done
-          curl -XPOST -u elastic:changeme http://localhost:9200/_license/start_trial?acknowledge=true
-          docker-compose up kibana &
-          sleep 30
+        run: make compose.wait
       - name: Run build
         run: make build
       - name: Run acceptance tests
-        run: KIBANA_URL="http://localhost:5601" KIBANA_USERNAME="elastic" KIBANA_PASSWORD="changeme" make testacc
-      - uses: codecov/codecov-action@v2
-        with:
-          files: coverage.out
-          flags: unittests
-          fail_ci_if_error: true
+        run: make testacc
 
   goreleaser:
     runs-on: ubuntu-latest
@@ -62,7 +39,7 @@ jobs:
         uses: paultyng/ghaction-import-gpg@v2.1.0
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          PASSPHRASE: ${{ secrets.PASSPHRASE }}
+          PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v2
         with:

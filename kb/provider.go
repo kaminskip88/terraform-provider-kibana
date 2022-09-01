@@ -1,6 +1,7 @@
 package kb
 
 import (
+	"fmt"
 	"net/url"
 	"time"
 
@@ -67,7 +68,6 @@ func Provider() *schema.Provider {
 			"kibana_role":              resourceKibanaRole(),
 			"kibana_object":            resourceKibanaObject(),
 			"kibana_logstash_pipeline": resourceKibanaLogstashPipeline(),
-			"kibana_copy_object":       resourceKibanaCopyObject(),
 			"kibana_dataview":          resourceKibanaDataView(),
 		},
 
@@ -96,14 +96,15 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 
 	// Intialise connexion
 	cfg := kibana.Config{
-		Address: URL,
-		CAs:     cacertFiles,
+		Address:     URL,
+		CAs:         cacertFiles,
+		DisableWarn: true,
 	}
 	if username != "" && password != "" {
 		cfg.Username = username
 		cfg.Password = password
 	}
-	if insecure == true {
+	if insecure {
 		cfg.DisableVerifySSL = true
 	}
 
@@ -116,7 +117,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	nbFailed := 0
 	isOnline := false
 	var kibanaStatus kbapi.KibanaStatus
-	for isOnline == false {
+	for !isOnline {
 		kibanaStatus, err = client.API.KibanaStatus.Get()
 		if err == nil {
 			isOnline = true
@@ -130,7 +131,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	if kibanaStatus == nil {
-		return nil, errors.New("Status is empty, somethink wrong with Kibana ?")
+		return nil, errors.New("status is empty, somethink wrong with Kibana ?")
 	}
 
 	version := kibanaStatus["version"].(map[string]interface{})["number"].(string)
@@ -140,7 +141,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	vMinimal := semver.New("8.0.0")
 
 	if vCurrent.LessThan(*vMinimal) {
-		return nil, errors.New("Kibana is older than 7.0.0")
+		return nil, fmt.Errorf("kibana is older than %s", vMinimal.String())
 	}
 
 	return client, nil

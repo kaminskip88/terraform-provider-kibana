@@ -27,3 +27,6 @@ terraform-provider-kibana
 *.tfstate.*
 .terraform
 registry/
+
+# compose
+docker-elk

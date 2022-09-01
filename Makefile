@@ -1,118 +1,76 @@
+# TEST?=$$(go list ./... | grep -v 'vendor')
 TEST?=./...
-PKG_NAME=kb
 GOFMT_FILES?=$$(find . -name '*.go' |grep -v vendor)
-WEBSITE_REPO=github.com/hashicorp/terraform-website
+HOSTNAME=hashicorp.com
+NAMESPACE=kaminskip88
+NAME=kibana
+BINARY=terraform-provider-${NAME}
+VERSION=0.0.1
+OS_ARCH=darwin_amd64
+
 KIBANA_URL ?= http://127.0.0.1:5601
 KIBANA_USERNAME ?= elastic
 KIBANA_PASSWORD ?= changeme
-ELASTICSEARCH_URLS ?= http://127.0.0.1:9200
-ELASTICSEARCH_USERNAME ?= elastic
-ELASTICSEARCH_PASSWORD ?= changeme
 
 default: build
 
-build: fmt fmtcheck
-	go install
+build: fmtcheck
+	go build -o ${BINARY}
 
-local-build:
-	mkdir -p registry/registry.terraform.io/disaster37/kibana/1.0.0/linux_amd64
-	go build -o registry/registry.terraform.io/disaster37/kibana/1.0.0/linux_amd64/terraform-provider-kibana
-
-gen:
-	rm -f aws/internal/keyvaluetags/*_gen.go
-	go generate ./...
+install: build
+	mkdir -p ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+	mv ${BINARY} ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
 
 test: fmtcheck
-	go test $(TEST) -timeout=30s -parallel=4
+	go test -i $(TEST) || exit 1
+	echo $(TEST) | \
+		xargs -t -n4 go test $(TESTARGS) -timeout=30s -parallel=4
 
-testacc: fmt fmtcheck
-	KIBANA_URL=${KIBANA_URL} KIBANA_USERNAME=${KIBANA_USERNAME} KIBANA_PASSWORD=${KIBANA_PASSWORD} TF_ACC=1 TF_LOG_PROVIDER=DEBUG go test $(TEST) -v -count 1 -parallel 1 -race -coverprofile=coverage.out -covermode=atomic $(TESTARGS) -timeout 120m
+testacc: fmtcheck
+	KIBANA_URL=${KIBANA_URL} KIBANA_USERNAME=${KIBANA_USERNAME} KIBANA_PASSWORD=${KIBANA_PASSWORD} TF_ACC=1 go test $(TEST) -v $(TESTARGS) -timeout 2m
+
+vet:
+	@echo "go vet ."
+	@go vet $$(go list ./... | grep -v vendor/) ; if [ $$? -eq 1 ]; then \
+		echo ""; \
+		echo "Vet found suspicious constructs. Please check the reported constructs"; \
+		echo "and fix them if necessary before submitting the code for review."; \
+		exit 1; \
+	fi
 
 fmt:
-	@echo "==> Fixing source code with gofmt..."
-	gofmt -s -w ./$(PKG_NAME)
+	gofmt -w $(GOFMT_FILES)
 
-# Currently required by tf-deploy compile
 fmtcheck:
 	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
 
-websitefmtcheck:
-	@sh -c "'$(CURDIR)/scripts/websitefmtcheck.sh'"
-
-lint:
-	@echo "==> Checking source code against linters..."
-	@golangci-lint run --no-config --deadline 5m --disable-all --enable staticcheck --exclude SA1019 --max-issues-per-linter 0 --max-same-issues 0 ./$(PKG_NAME)/...
-	@golangci-lint run ./$(PKG_NAME)/...
-	@tfproviderlint \
-		-c 1 \
-		-AT001 \
-		-S001 \
-		-S002 \
-		-S003 \
-		-S004 \
-		-S005 \
-		-S007 \
-		-S008 \
-		-S009 \
-		-S010 \
-		-S011 \
-		-S012 \
-		-S013 \
-		-S014 \
-		-S015 \
-		-S016 \
-		-S017 \
-		-S019 \
-		./$(PKG_NAME)
-
-tools:
-	GO111MODULE=on go install github.com/bflad/tfproviderlint/cmd/tfproviderlint
-	GO111MODULE=on go install github.com/client9/misspell/cmd/misspell
-	GO111MODULE=on go install github.com/golangci/golangci-lint/cmd/golangci-lint
+errcheck:
+	@sh -c "'$(CURDIR)/scripts/errcheck.sh'"
 
 test-compile:
 	@if [ "$(TEST)" = "./..." ]; then \
 		echo "ERROR: Set TEST to a specific package. For example,"; \
-		echo "  make test-compile TEST=./$(PKG_NAME)"; \
+		echo "  make test-compile TEST=./$(NAME)"; \
 		exit 1; \
 	fi
 	go test -c $(TEST) $(TESTARGS)
 
-website:
-ifeq (,$(wildcard $(GOPATH)/src/$(WEBSITE_REPO)))
-	echo "$(WEBSITE_REPO) not found in your GOPATH (necessary for layouts and assets), get-ting..."
-	git clone https://$(WEBSITE_REPO) $(GOPATH)/src/$(WEBSITE_REPO)
-endif
-	@$(MAKE) -C $(GOPATH)/src/$(WEBSITE_REPO) website-provider PROVIDER_PATH=$(shell pwd) PROVIDER_NAME=$(PKG_NAME)
+docker-elk:
+	git clone https://github.com/deviantony/docker-elk.git
 
-website-lint:
-	@echo "==> Checking website against linters..."
-	@misspell -error -source=text website/
+compose.up: docker-elk
+	docker-compose -f docker-elk/docker-compose.yml up -d elasticsearch kibana setup
 
-website-test:
-ifeq (,$(wildcard $(GOPATH)/src/$(WEBSITE_REPO)))
-	echo "$(WEBSITE_REPO) not found in your GOPATH (necessary for layouts and assets), get-ting..."
-	git clone https://$(WEBSITE_REPO) $(GOPATH)/src/$(WEBSITE_REPO)
-endif
-	@$(MAKE) -C $(GOPATH)/src/$(WEBSITE_REPO) website-provider-test PROVIDER_PATH=$(shell pwd) PROVIDER_NAME=$(PKG_NAME)
+compose.wait: compose.up
+	until curl -s -X POST -u elastic:changeme -H "Content-Type: application/json" \
+	  	http://localhost:9200/_security/user/kibana_system/_password \
+		-d "{\"password\":\"changeme\"}" | grep -q "^{}"; do sleep 10; \
+	done
 
-start-pods: clean-pods
-	kubectl run elasticsearch --image docker.elastic.co/elasticsearch/elasticsearch:8.0.1 --port "9200" --expose --env "cluster.name=test" --env "discovery.type=single-node" --env "ELASTIC_PASSWORD=changeme" --env "xpack.security.enabled=true" --env "ES_JAVA_OPTS=-Xms512m -Xmx512m" --env "path.repo=/tmp" --limits "cpu=500m,memory=1024Mi"
-	kubectl run kibana --image docker.elastic.co/kibana/kibana:8.0.1 --expose --port "5601" --env "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"  --env "ELASTICSEARCH_USERNAME=kibana_system" --env "ELASTICSEARCH_PASSWORD=changeme" --limits "cpu=500m,memory=1Gi"
-	echo "Waiting for Elasticsearch availability"
-	until curl -s http://elasticsearch:9200 | grep -q 'missing authentication credentials'; do sleep 30; done;
-	echo "Setting kibana_system password"
-	until curl -s -X POST -u elastic:changeme -H "Content-Type: application/json" http://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"changeme\"}" | grep -q "^{}"; do sleep 10; done
-	echo "Enable trial license"
-	curl -XPOST -u elastic:changeme http://elasticsearch:9200/_license/start_trial?acknowledge=true
+compose.down: docker-elk
+	docker-compose -f docker-elk/docker-compose.yml down -v
 
-clean-pods:
-	kubectl delete --ignore-not-found pod/kibana
-	kubectl delete --ignore-not-found service/kibana
-	kubectl delete --ignore-not-found pod/elasticsearch
-	kubectl delete --ignore-not-found service/elasticsearch
+compose.logs: docker-elk
+	docker-compose -f docker-elk/docker-compose.yml logs -f
 
-trial-license:
-	curl -XPOST -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URLS}/_license/start_trial?acknowledge=true
-
-.PHONY: build gen sweep test testacc fmt fmtcheck lint tools test-compile website website-lint website-test start-pods clean-pods local-build trial-license
+.PHONY: build test testacc vet fmt fmtcheck errcheck test-compile test-serv compose.up compose.down compose.logs
