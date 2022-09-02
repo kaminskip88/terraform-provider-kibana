@@ -7,7 +7,7 @@ require (
 	github.com/elastic/go-ucfg v0.8.4
 	github.com/gliderlabs/logspout v3.2.6+incompatible
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.10.1
-	github.com/kaminskip88/go-kibana-rest/v8 v8.3.2
+	github.com/kaminskip88/go-kibana-rest/v8 v8.0.1
 	github.com/looplab/logspout-logstash v0.0.0-20200721102059-f6992c03834b
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
